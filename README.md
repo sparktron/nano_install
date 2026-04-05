@@ -183,6 +183,102 @@ Enables nanobot to safely access files within a scoped directory:
 
 ---
 
+## 🔌 Post-Installation: Setting Up MCP Filesystem
+
+If you skipped MCP configuration during installation, or want to modify it afterward, follow these steps:
+
+### 1. Verify Current MCP Configuration
+Check what's currently configured:
+```bash
+cat ~/.nanobot/config.json | grep -A 10 mcpServers
+```
+
+If the output is empty or doesn't show `mcpServers`, you'll need to add it.
+
+### 2. Edit the Config File
+Open the config file in your editor:
+```bash
+nano ~/.nanobot/config.json
+```
+
+### 3. Add or Update the MCP Filesystem Server
+
+Find the `tools` section and add the `mcpServers` block. Here's the structure:
+
+```json
+{
+  "tools": {
+    "web": { "search": { "apiKey": "your-brave-key", "maxResults": 5 } },
+    "mcpServers": {
+      "filesystem": {
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/workspace"]
+      }
+    }
+  }
+}
+```
+
+**Replace `/path/to/workspace`** with the directory you want nanobot to access (e.g., `~/projects`, `~/documents`, or `/home/user/data`).
+
+### 4. Restart the Service
+If using systemd:
+```bash
+systemctl --user restart nanobot-gateway
+```
+
+Or if running in foreground, stop the current process and restart:
+```bash
+nanobot gateway
+```
+
+### 5. Verify MCP is Working
+Check the logs for errors:
+```bash
+journalctl --user -u nanobot-gateway -n 20
+```
+
+You should see no errors related to MCP server startup. Test by asking nanobot to list or read files:
+```bash
+nanobot agent -m "List the files in my workspace directory"
+```
+
+### Multiple MCP Servers (Advanced)
+
+You can configure multiple MCP servers for different purposes. For example:
+
+```json
+{
+  "tools": {
+    "web": { "search": { "apiKey": "...", "maxResults": 5 } },
+    "mcpServers": {
+      "projects": {
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-filesystem", "~/projects"]
+      },
+      "documents": {
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-filesystem", "~/documents"]
+      },
+      "data": {
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-filesystem", "/mnt/data"]
+      }
+    }
+  }
+}
+```
+
+Each server runs independently with its own scoped directory. nanobot can access all of them.
+
+### Security Notes
+
+- **Scope is enforced**: The MCP filesystem server only has access to the specified directory and its subdirectories. It cannot access parent directories or anywhere else on the system.
+- **Read/Write access**: By default, nanobot can both read and write files. If you need read-only access, configure a restricted user or mount with read-only permissions.
+- **Never expose the home directory carelessly**: If nanobot misbehaves or is compromised, limiting its scope to a specific project directory reduces risk.
+
+---
+
 ## 🐛 Troubleshooting
 
 ### "ollama not found" or Ollama API not responding
