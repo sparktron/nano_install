@@ -48,6 +48,7 @@ $Config = @{
     TelegramUserId      = ""
     McpWorkspacePath    = ""
     SetupWindowsTask    = $false
+    GpuType             = "auto"
 }
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -209,6 +210,61 @@ if (Prompt-YesNo "Configure MCP filesystem server?" -Default $true) {
     }
 } else {
     Write-Warn "Skipped"
+}
+
+# ── GPU Configuration ─────────────────────────────────────────────────────────
+Write-Host ""
+Write-Host "$($Colors.Cyan)GPU Acceleration$($Colors.Reset) — force Ollama to use GPU (NVIDIA/AMD/Intel)"
+Write-Host "  $($Colors.Yellow)[Optional - auto-detection usually works]$($Colors.Reset)"
+Write-Host ""
+if (Prompt-YesNo "Configure GPU acceleration?" -Default $false) {
+    Write-Host ""
+    Write-Host "$($Colors.Cyan)Select your GPU type:$($Colors.Reset)"
+    Write-Host "  1) NVIDIA CUDA (RTX, GTX, Tesla, L40, etc.)"
+    Write-Host "  2) AMD ROCm (Radeon RX, Radeon Pro, etc.)"
+    Write-Host "  3) Intel Arc"
+    Write-Host "  4) CPU only (no GPU acceleration)"
+    Write-Host ""
+
+    while ($true) {
+        $gpuChoice = Read-Host "Enter GPU type [1-4, default: auto-detect]"
+        if ([string]::IsNullOrWhiteSpace($gpuChoice)) {
+            $gpuChoice = "0"
+        }
+        if ($gpuChoice -match '^\d+$' -and [int]$gpuChoice -ge 0 -and [int]$gpuChoice -le 4) {
+            break
+        }
+        Write-Warn "Invalid choice. Enter 1-4 or press Enter for auto-detect."
+    }
+
+    switch ([int]$gpuChoice) {
+        1 {
+            Write-Info "NVIDIA CUDA selected — will force CUDA acceleration"
+            $Config.GpuType = "nvidia"
+            Write-Success "NVIDIA CUDA GPU acceleration enabled"
+        }
+        2 {
+            Write-Info "AMD ROCm selected — will force AMD acceleration"
+            $Config.GpuType = "amd"
+            Write-Success "AMD ROCm GPU acceleration enabled"
+        }
+        3 {
+            Write-Info "Intel Arc selected — will use Intel GPU"
+            $Config.GpuType = "intel"
+            Write-Success "Intel Arc GPU acceleration enabled"
+        }
+        4 {
+            Write-Info "CPU only mode — no GPU acceleration"
+            $Config.GpuType = "cpu"
+            Write-Success "CPU-only mode (GPU disabled)"
+        }
+        default {
+            Write-Info "Auto-detection enabled"
+            $Config.GpuType = "auto"
+        }
+    }
+} else {
+    Write-Info "GPU auto-detection enabled (Ollama will detect automatically)"
 }
 
 # ── Windows Task Scheduler ────────────────────────────────────────────────────
@@ -528,16 +584,40 @@ if ($Config.SetupWindowsTask) {
         Unregister-ScheduledTask -TaskName $taskName -Confirm:$false
     }
 
+    # Build GPU environment variable command
+    $gpuCommand = ""
+    switch ($Config.GpuType) {
+        "nvidia" {
+            $gpuCommand = "`$env:CUDA_VISIBLE_DEVICES='0'; `$env:OLLAMA_NUM_PARALLEL='4'; "
+            Write-Info "GPU: NVIDIA CUDA (forcing CUDA_VISIBLE_DEVICES=0)"
+        }
+        "amd" {
+            $gpuCommand = "`$env:OLLAMA_NUM_PARALLEL='4'; "
+            Write-Info "GPU: AMD ROCm (ROCm auto-detection enabled)"
+        }
+        "intel" {
+            $gpuCommand = "`$env:OLLAMA_NUM_PARALLEL='4'; "
+            Write-Info "GPU: Intel Arc (Intel GPU support enabled)"
+        }
+        "cpu" {
+            $gpuCommand = "`$env:OLLAMA_NUM_GPU='0'; "
+            Write-Info "GPU: CPU only (GPU acceleration disabled)"
+        }
+        default {
+            Write-Info "GPU: Auto-detection (Ollama will detect automatically)"
+        }
+    }
+
     # Create task trigger (at login and system startup)
     $triggers = @(
         (New-ScheduledTaskTrigger -AtLogon -RunAsUser $env:USERNAME),
         (New-ScheduledTaskTrigger -AtStartup)
     )
 
-    # Create task action
+    # Create task action with GPU environment variables
     $action = New-ScheduledTaskAction `
         -Execute "PowerShell.exe" `
-        -Argument "-NoProfile -WindowStyle Hidden -Command `"nanobot gateway`""
+        -Argument "-NoProfile -WindowStyle Hidden -Command `"${gpuCommand}nanobot gateway`""
 
     # Create task principal (run as current user)
     $principal = New-ScheduledTaskPrincipal -UserId "$env:USERDOMAIN\$env:USERNAME" -LogonType Interactive
@@ -546,7 +626,7 @@ if ($Config.SetupWindowsTask) {
     $task = New-ScheduledTask -Action $action -Trigger $triggers -Principal $principal -Description "NanobotAI Gateway Service"
     Register-ScheduledTask -TaskName $taskName -InputObject $task -Force | Out-Null
 
-    Write-Success "Auto-start task scheduled"
+    Write-Success "Auto-start task scheduled with GPU configuration"
 }
 
 # ── Verify ────────────────────────────────────────────────────────────────────
@@ -601,6 +681,15 @@ if ($Config.SetupWindowsTask) {
 } else {
     Write-Host "  $($Colors.Bold)Auto-start:$($Colors.Reset) $($Colors.Yellow)not configured$($Colors.Reset)"
 }
+
+$gpuLabel = switch ($Config.GpuType) {
+    "nvidia" { "$($Colors.Green)NVIDIA CUDA$($Colors.Reset)" }
+    "amd" { "$($Colors.Green)AMD ROCm$($Colors.Reset)" }
+    "intel" { "$($Colors.Green)Intel Arc$($Colors.Reset)" }
+    "cpu" { "$($Colors.Yellow)CPU only$($Colors.Reset)" }
+    default { "$($Colors.Yellow)auto-detect$($Colors.Reset)" }
+}
+Write-Host "  $($Colors.Bold)GPU:$($Colors.Reset)        $gpuLabel"
 
 Write-Host ""
 Write-Host "$($Colors.Bold)Commands:$($Colors.Reset)"

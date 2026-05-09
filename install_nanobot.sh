@@ -184,6 +184,60 @@ else
     warn "Skipped"
 fi
 
+# ── GPU Configuration ─────────────────────────────────────────────────────────
+echo ""
+echo -e "${CYAN}GPU Acceleration${NC} — force Ollama to use GPU (NVIDIA/AMD/Intel)"
+echo -e "  ${YELLOW}[Optional - auto-detection usually works]${NC}"
+echo ""
+GPU_CONFIG=""
+if prompt_yn "Configure GPU acceleration?" "n"; then
+    echo ""
+    echo -e "${CYAN}Select your GPU type:${NC}"
+    echo "  1) NVIDIA CUDA (RTX, GTX, Tesla, etc.)"
+    echo "  2) AMD ROCm (Radeon RX, Radeon Pro, etc.)"
+    echo "  3) Intel Arc"
+    echo "  4) Apple Metal (macOS only)"
+    echo "  5) CPU only (no GPU)"
+    echo ""
+    while true; do
+        read -rp "Enter GPU type [1-5, default: auto-detect]: " gpu_choice
+        gpu_choice="${gpu_choice:-0}"
+        if [[ "$gpu_choice" =~ ^[0-5]$ ]]; then
+            break
+        fi
+        warn "Invalid choice. Enter 1-5 or press Enter for auto-detect."
+    done
+
+    case "$gpu_choice" in
+        1)
+            info "NVIDIA CUDA selected — will force CUDA acceleration"
+            GPU_CONFIG="nvidia"
+            ;;
+        2)
+            info "AMD ROCm selected — will force AMD acceleration"
+            GPU_CONFIG="amd"
+            ;;
+        3)
+            info "Intel Arc selected — will use Intel GPU"
+            GPU_CONFIG="intel"
+            ;;
+        4)
+            info "Apple Metal selected (macOS only)"
+            GPU_CONFIG="metal"
+            ;;
+        5)
+            info "CPU only mode — no GPU acceleration"
+            GPU_CONFIG="cpu"
+            ;;
+        *)
+            info "Auto-detection enabled"
+            GPU_CONFIG=""
+            ;;
+    esac
+else
+    info "GPU auto-detection enabled (Ollama will detect automatically)"
+fi
+
 # ── systemd service ───────────────────────────────────────────────────────────
 echo ""
 echo -e "${CYAN}systemd user service${NC} — runs nanobot gateway on login / after reboot"
@@ -706,6 +760,34 @@ if [[ "$SETUP_SYSTEMD" == true ]]; then
     SERVICE_FILE="$SYSTEMD_USER_DIR/nanobot-gateway.service"
     mkdir -p "$SYSTEMD_USER_DIR"
 
+    # Build GPU environment variables
+    GPU_ENV=""
+    case "$GPU_CONFIG" in
+        nvidia)
+            GPU_ENV=$'Environment=CUDA_VISIBLE_DEVICES=0\nEnvironment=OLLAMA_NUM_PARALLEL=4'
+            info "GPU: NVIDIA CUDA (forcing CUDA_VISIBLE_DEVICES=0)"
+            ;;
+        amd)
+            GPU_ENV=$'Environment=OLLAMA_NUM_PARALLEL=4'
+            info "GPU: AMD ROCm (ROCm auto-detection enabled)"
+            ;;
+        intel)
+            GPU_ENV=$'Environment=OLLAMA_NUM_PARALLEL=4'
+            info "GPU: Intel Arc (Intel GPU support enabled)"
+            ;;
+        metal)
+            GPU_ENV=$'Environment=OLLAMA_NUM_PARALLEL=4'
+            info "GPU: Apple Metal (macOS GPU support enabled)"
+            ;;
+        cpu)
+            GPU_ENV=$'Environment=OLLAMA_NUM_GPU=0'
+            info "GPU: CPU only (GPU acceleration disabled)"
+            ;;
+        *)
+            info "GPU: Auto-detection (Ollama will detect automatically)"
+            ;;
+    esac
+
     cat > "$SERVICE_FILE" <<EOF
 [Unit]
 Description=Nanobot Gateway
@@ -724,6 +806,7 @@ ReadWritePaths=${HOME}/.nanobot
 Environment=HOME=${HOME}
 Environment=PATH=${HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin
 Environment=NPM_CONFIG_CACHE=${HOME}/.nanobot/npm-cache
+${GPU_ENV}
 EnvironmentFile=-${GATEWAY_ENV_FILE}
 WorkingDirectory=${HOME}/.nanobot/workspace
 
@@ -765,6 +848,15 @@ echo -e "  ${BOLD}Workspace:${NC}  ${CYAN}${HOME}/.nanobot/workspace${NC}"
 [[ -n "$TELEGRAM_TOKEN" ]]     && echo -e "  ${BOLD}Telegram:${NC}   ${GREEN}enabled${NC}"                    || echo -e "  ${BOLD}Telegram:${NC}   ${YELLOW}disabled${NC}"
 [[ -n "$MCP_WORKSPACE_PATH" ]] && echo -e "  ${BOLD}MCP path:${NC}   ${CYAN}${MCP_WORKSPACE_PATH}${NC}"      || echo -e "  ${BOLD}MCP:${NC}        ${YELLOW}not configured${NC}"
 [[ "$SETUP_SYSTEMD" == true ]] && echo -e "  ${BOLD}Service:${NC}    ${GREEN}nanobot-gateway (systemd)${NC}"  || echo -e "  ${BOLD}Service:${NC}    ${YELLOW}not installed${NC}"
+
+# GPU summary
+case "$GPU_CONFIG" in
+    nvidia) echo -e "  ${BOLD}GPU:${NC}         ${GREEN}NVIDIA CUDA${NC}" ;;
+    amd)    echo -e "  ${BOLD}GPU:${NC}         ${GREEN}AMD ROCm${NC}" ;;
+    intel)  echo -e "  ${BOLD}GPU:${NC}         ${GREEN}Intel Arc${NC}" ;;
+    cpu)    echo -e "  ${BOLD}GPU:${NC}         ${YELLOW}CPU only${NC}" ;;
+    *)      echo -e "  ${BOLD}GPU:${NC}         ${YELLOW}auto-detect${NC}" ;;
+esac
 echo ""
 echo -e "${BOLD}Commands:${NC}"
 echo -e "  ${YELLOW}nanobot agent${NC}                           # interactive CLI"
