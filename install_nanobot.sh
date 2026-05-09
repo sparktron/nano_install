@@ -32,8 +32,8 @@ MODELS=(
 # ── Config state (populated during prompts) ───────────────────────────────────
 MODEL_TAG=""
 BRAVE_API_KEY=""
-TELEGRAM_TOKEN=""
-TELEGRAM_USER_ID=""
+DISCORD_TOKEN=""
+DISCORD_CHANNEL_ID=""
 MCP_WORKSPACE_PATH=""
 SETUP_SYSTEMD=false
 
@@ -140,24 +140,24 @@ else
     warn "Skipped — you can add Brave Search later"
 fi
 
-# ── Telegram ──────────────────────────────────────────────────────────────────
+# ── Discord ───────────────────────────────────────────────────────────────────
 echo ""
-echo -e "${CYAN}Telegram channel${NC} — gives nanobot a real UI"
-echo -e "  1. Create a bot via @BotFather → copy the token"
-echo -e "  2. Get your numeric user ID via @userinfobot"
-echo -e "  ${YELLOW}[Optional - requires Telegram bot setup]${NC}"
+echo -e "${CYAN}Discord channel${NC} — gives nanobot a real UI"
+echo -e "  1. Create a bot at ${YELLOW}discord.com/developers/applications${NC} → copy token"
+echo -e "  2. Copy your Discord channel ID (from Discord → right-click channel → Copy ID)"
+echo -e "  ${YELLOW}[Recommended - easier than Telegram]${NC}"
 echo ""
-if prompt_yn "Configure Telegram now?" "n"; then
-    read -rp "  Bot token: " TELEGRAM_TOKEN
-    TELEGRAM_TOKEN="${TELEGRAM_TOKEN// /}"
-    read -rp "  Your numeric user ID: " TELEGRAM_USER_ID
-    TELEGRAM_USER_ID="${TELEGRAM_USER_ID// /}"
-    if [[ -n "$TELEGRAM_TOKEN" && -n "$TELEGRAM_USER_ID" ]]; then
-        success "Telegram config captured"
+if prompt_yn "Configure Discord?" "y"; then
+    read -rp "  Bot token: " DISCORD_TOKEN
+    DISCORD_TOKEN="${DISCORD_TOKEN// /}"
+    read -rp "  Discord channel ID: " DISCORD_CHANNEL_ID
+    DISCORD_CHANNEL_ID="${DISCORD_CHANNEL_ID// /}"
+    if [[ -n "$DISCORD_TOKEN" && -n "$DISCORD_CHANNEL_ID" ]]; then
+        success "Discord config captured"
     else
-        warn "Incomplete — Telegram will not be enabled"
-        TELEGRAM_TOKEN=""
-        TELEGRAM_USER_ID=""
+        warn "Incomplete — Discord will not be enabled"
+        DISCORD_TOKEN=""
+        DISCORD_CHANNEL_ID=""
     fi
 else
     warn "Skipped — CLI mode only"
@@ -352,17 +352,17 @@ if [[ -f "$NANOBOT_CONFIG" ]]; then
 fi
 
 # Build channel block
-if [[ -n "$TELEGRAM_TOKEN" ]]; then
-    TELEGRAM_BLOCK="    \"telegram\": {
+if [[ -n "$DISCORD_TOKEN" ]]; then
+    DISCORD_BLOCK="    \"discord\": {
       \"enabled\": true,
       \"token\": \"\",
-      \"allowFrom\": [\"${TELEGRAM_USER_ID}\"]
+      \"channelId\": \"${DISCORD_CHANNEL_ID}\"
     }"
 else
-    TELEGRAM_BLOCK="    \"telegram\": {
+    DISCORD_BLOCK="    \"discord\": {
       \"enabled\": false,
       \"token\": \"\",
-      \"allowFrom\": []
+      \"channelId\": \"\"
     }"
 fi
 
@@ -422,7 +422,7 @@ cat > "$NANOBOT_CONFIG" <<EOF
     }
   },
   "channels": {
-${TELEGRAM_BLOCK}
+${DISCORD_BLOCK}
   },
   "gateway": {
     "host": "127.0.0.1",
@@ -433,16 +433,16 @@ ${TOOLS_BLOCK}
 EOF
 success "Config written to ${NANOBOT_CONFIG}"
 
-# Store Telegram token outside the main config file.
+# Store Discord token outside the main config file.
 GATEWAY_ENV_DIR="$HOME/.config/nanobot"
 GATEWAY_ENV_FILE="$GATEWAY_ENV_DIR/gateway.env"
 mkdir -p "$GATEWAY_ENV_DIR"
-if [[ -n "$TELEGRAM_TOKEN" ]]; then
+if [[ -n "$DISCORD_TOKEN" ]]; then
     cat > "$GATEWAY_ENV_FILE" <<EOF
-NANOBOT_TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
+NANOBOT_DISCORD_TOKEN=${DISCORD_TOKEN}
 EOF
     chmod 600 "$GATEWAY_ENV_FILE"
-    success "Telegram token stored in ${GATEWAY_ENV_FILE}"
+    success "Discord token stored in ${GATEWAY_ENV_FILE}"
 fi
 
 # Create a launcher that injects secrets at runtime and waits for DNS.
@@ -467,28 +467,28 @@ if [[ ! -f "${BASE_CONFIG}" ]]; then
     exit 1
 fi
 
-needs_telegram_dns="$(python3.11 - <<'PY'
+needs_discord_dns="$(python3.11 - <<'PY'
 import json
 import os
 from pathlib import Path
 
 data = json.loads(Path(os.environ["BASE_CONFIG"]).read_text(encoding="utf-8"))
-telegram = data.get("channels", {}).get("telegram", {})
-enabled = bool(telegram.get("enabled"))
-token = os.environ.get("NANOBOT_TELEGRAM_TOKEN", "").strip()
+discord = data.get("channels", {}).get("discord", {})
+enabled = bool(discord.get("enabled"))
+token = os.environ.get("NANOBOT_DISCORD_TOKEN", "").strip()
 print("yes" if enabled and token else "no")
 PY
 )"
 
-if [[ "${needs_telegram_dns}" == "yes" ]]; then
+if [[ "${needs_discord_dns}" == "yes" ]]; then
     for _ in $(seq 1 30); do
-        if getent hosts api.telegram.org >/dev/null 2>&1; then
+        if getent hosts discord.com >/dev/null 2>&1; then
             break
         fi
         sleep 2
     done
-    if ! getent hosts api.telegram.org >/dev/null 2>&1; then
-        echo "Timed out waiting for DNS resolution for api.telegram.org" >&2
+    if ! getent hosts discord.com >/dev/null 2>&1; then
+        echo "Timed out waiting for DNS resolution for discord.com" >&2
         exit 1
     fi
 fi
@@ -502,8 +502,8 @@ base_path = Path(os.environ["BASE_CONFIG"])
 runtime_path = Path(os.environ["RUNTIME_CONFIG"])
 
 data = json.loads(base_path.read_text(encoding="utf-8"))
-telegram = data.setdefault("channels", {}).setdefault("telegram", {})
-telegram["token"] = os.environ.get("NANOBOT_TELEGRAM_TOKEN", "").strip()
+discord = data.setdefault("channels", {}).setdefault("discord", {})
+discord["token"] = os.environ.get("NANOBOT_DISCORD_TOKEN", "").strip()
 
 runtime_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
 runtime_path.chmod(0o600)
@@ -663,31 +663,31 @@ else
     warn "nanobot-gateway service is not installed for this user"
 fi
 
-telegram_enabled="$(python3.11 - "${CONFIG_PATH}" <<'PY'
+discord_enabled="$(python3.11 - "${CONFIG_PATH}" <<'PY'
 import json
 import sys
 from pathlib import Path
 
 data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-print("yes" if data.get("channels", {}).get("telegram", {}).get("enabled") else "no")
+print("yes" if data.get("channels", {}).get("discord", {}).get("enabled") else "no")
 PY
 )"
 
-if [[ "${telegram_enabled}" == "yes" ]]; then
+if [[ "${discord_enabled}" == "yes" ]]; then
     if [[ -f "${GATEWAY_ENV_PATH}" ]] && python3.11 - "${GATEWAY_ENV_PATH}" <<'PY'
 import sys
 from pathlib import Path
 
 for line in Path(sys.argv[1]).read_text(encoding="utf-8").splitlines():
     key, separator, value = line.partition("=")
-    if key == "NANOBOT_TELEGRAM_TOKEN" and separator and value.strip():
+    if key == "NANOBOT_DISCORD_TOKEN" and separator and value.strip():
         raise SystemExit(0)
 raise SystemExit(1)
 PY
     then
-        ok "Telegram token is present in gateway env file"
+        ok "Discord token is present in gateway env file"
     else
-        fail "Telegram is enabled, but ${GATEWAY_ENV_PATH} has no NANOBOT_TELEGRAM_TOKEN"
+        fail "Discord is enabled, but ${GATEWAY_ENV_PATH} has no NANOBOT_DISCORD_TOKEN"
     fi
 
     if [[ -f "${RUNTIME_CONFIG_PATH}" ]] && python3.11 - "${RUNTIME_CONFIG_PATH}" <<'PY'
@@ -696,13 +696,13 @@ import sys
 from pathlib import Path
 
 data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
-token = data.get("channels", {}).get("telegram", {}).get("token", "")
+token = data.get("channels", {}).get("discord", {}).get("token", "")
 raise SystemExit(0 if token else 1)
 PY
     then
-        ok "Runtime gateway config has Telegram token injected"
+        ok "Runtime gateway config has Discord token injected"
     else
-        warn "Runtime gateway config is missing or has no injected Telegram token"
+        warn "Runtime gateway config is missing or has no injected Discord token"
     fi
 fi
 
@@ -845,7 +845,7 @@ echo -e "  ${BOLD}Config:${NC}     ${CYAN}${NANOBOT_CONFIG}${NC}"
 echo -e "  ${BOLD}Source:${NC}     ${CYAN}${NANOBOT_DIR}${NC}"
 echo -e "  ${BOLD}Workspace:${NC}  ${CYAN}${HOME}/.nanobot/workspace${NC}"
 [[ -n "$BRAVE_API_KEY" ]]      && echo -e "  ${BOLD}Web search:${NC} ${GREEN}enabled (Brave)${NC}"            || echo -e "  ${BOLD}Web search:${NC} ${YELLOW}disabled${NC}"
-[[ -n "$TELEGRAM_TOKEN" ]]     && echo -e "  ${BOLD}Telegram:${NC}   ${GREEN}enabled${NC}"                    || echo -e "  ${BOLD}Telegram:${NC}   ${YELLOW}disabled${NC}"
+[[ -n "$DISCORD_TOKEN" ]]      && echo -e "  ${BOLD}Discord:${NC}    ${GREEN}enabled${NC}"                    || echo -e "  ${BOLD}Discord:${NC}    ${YELLOW}disabled${NC}"
 [[ -n "$MCP_WORKSPACE_PATH" ]] && echo -e "  ${BOLD}MCP path:${NC}   ${CYAN}${MCP_WORKSPACE_PATH}${NC}"      || echo -e "  ${BOLD}MCP:${NC}        ${YELLOW}not configured${NC}"
 [[ "$SETUP_SYSTEMD" == true ]] && echo -e "  ${BOLD}Service:${NC}    ${GREEN}nanobot-gateway (systemd)${NC}"  || echo -e "  ${BOLD}Service:${NC}    ${YELLOW}not installed${NC}"
 
@@ -876,11 +876,11 @@ if [[ -z "$BRAVE_API_KEY" ]]; then
     echo -e "  Set ${CYAN}tools.web.search.apiKey${NC} — free key at ${CYAN}brave.com/search/api${NC}"
     echo ""
 fi
-if [[ -z "$TELEGRAM_TOKEN" ]]; then
-    echo -e "${YELLOW}Tip:${NC} Add Telegram later:"
-    echo -e "  1. @BotFather for token, @userinfobot for your ID"
-    echo -e "  2. Edit config → set ${CYAN}channels.telegram.enabled=true${NC}"
-    echo -e "  3. Add ${CYAN}NANOBOT_TELEGRAM_TOKEN=<token>${NC} to ${CYAN}${GATEWAY_ENV_FILE}${NC}"
+if [[ -z "$DISCORD_TOKEN" ]]; then
+    echo -e "${YELLOW}Tip:${NC} Add Discord later:"
+    echo -e "  1. Create bot at ${CYAN}discord.com/developers/applications${NC}"
+    echo -e "  2. Edit config → set ${CYAN}channels.discord.enabled=true${NC}"
+    echo -e "  3. Add ${CYAN}NANOBOT_DISCORD_TOKEN=<token>${NC} to ${CYAN}${GATEWAY_ENV_FILE}${NC}"
     if [[ "$SETUP_SYSTEMD" == true ]]; then
     echo -e "  4. ${YELLOW}systemctl --user restart nanobot-gateway${NC}"
     fi

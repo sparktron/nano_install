@@ -44,8 +44,8 @@ $Models = @(
 $Config = @{
     ModelTag            = ""
     BraveApiKey         = ""
-    TelegramToken       = ""
-    TelegramUserId      = ""
+    DiscordToken        = ""
+    DiscordChannelId    = ""
     McpWorkspacePath    = ""
     SetupWindowsTask    = $false
     GpuType             = "auto"
@@ -161,24 +161,24 @@ if (Prompt-YesNo "Configure Brave Search now?" -Default $false) {
     Write-Warn "Skipped — you can add Brave Search later"
 }
 
-# ── Telegram ──────────────────────────────────────────────────────────────────
+# ── Discord ───────────────────────────────────────────────────────────────────
 Write-Host ""
-Write-Host "$($Colors.Cyan)Telegram channel$($Colors.Reset) — gives nanobot a real UI"
-Write-Host "  1. Create a bot via @BotFather → copy the token"
-Write-Host "  2. Get your numeric user ID via @userinfobot"
-Write-Host "  $($Colors.Yellow)[Optional - requires Telegram bot setup]$($Colors.Reset)"
+Write-Host "$($Colors.Cyan)Discord channel$($Colors.Reset) — gives nanobot a real UI"
+Write-Host "  1. Create a bot at $($Colors.Yellow)discord.com/developers/applications$($Colors.Reset) → copy token"
+Write-Host "  2. Copy your Discord channel ID (right-click channel → Copy ID)"
+Write-Host "  $($Colors.Yellow)[Recommended - easier than Telegram]$($Colors.Reset)"
 Write-Host ""
-if (Prompt-YesNo "Configure Telegram now?" -Default $false) {
-    $Config.TelegramToken = Read-Host "  Bot token"
-    $Config.TelegramToken = $Config.TelegramToken.Trim()
-    $Config.TelegramUserId = Read-Host "  Your numeric user ID"
-    $Config.TelegramUserId = $Config.TelegramUserId.Trim()
-    if ($Config.TelegramToken -and $Config.TelegramUserId) {
-        Write-Success "Telegram config captured"
+if (Prompt-YesNo "Configure Discord?" -Default $true) {
+    $Config.DiscordToken = Read-Host "  Bot token"
+    $Config.DiscordToken = $Config.DiscordToken.Trim()
+    $Config.DiscordChannelId = Read-Host "  Discord channel ID"
+    $Config.DiscordChannelId = $Config.DiscordChannelId.Trim()
+    if ($Config.DiscordToken -and $Config.DiscordChannelId) {
+        Write-Success "Discord config captured"
     } else {
-        Write-Warn "Incomplete — Telegram will not be enabled"
-        $Config.TelegramToken = ""
-        $Config.TelegramUserId = ""
+        Write-Warn "Incomplete — Discord will not be enabled"
+        $Config.DiscordToken = ""
+        $Config.DiscordChannelId = ""
     }
 } else {
     Write-Warn "Skipped — CLI mode only"
@@ -458,20 +458,20 @@ if (Test-Path $nanobotConfig) {
 }
 
 # Build channel block
-if ($Config.TelegramToken) {
-    $telegramBlock = @"
-    "telegram": {
+if ($Config.DiscordToken) {
+    $discordBlock = @"
+    "discord": {
       "enabled": true,
       "token": "",
-      "allowFrom": ["$($Config.TelegramUserId)"]
+      "channelId": "$($Config.DiscordChannelId)"
     }
 "@
 } else {
-    $telegramBlock = @"
-    "telegram": {
+    $discordBlock = @"
+    "discord": {
       "enabled": false,
       "token": "",
-      "allowFrom": []
+      "channelId": ""
     }
 "@
 }
@@ -536,7 +536,7 @@ $configJson = @"
     }
   },
   "channels": {
-$telegramBlock
+$discordBlock
   },
   "gateway": {
     "host": "127.0.0.1",
@@ -549,15 +549,15 @@ $toolsBlock
 Set-Content -Path $nanobotConfig -Value $configJson -Encoding UTF8
 Write-Success "Config written to $nanobotConfig"
 
-# Store Telegram token in environment file
+# Store Discord token in environment file
 $gatewayEnvDir = Join-Path $env:APPDATA "nanobot"
 $gatewayEnvFile = Join-Path $gatewayEnvDir "gateway.env"
 $null = New-Item -ItemType Directory -Path $gatewayEnvDir -Force
 
-if ($Config.TelegramToken) {
-    $envContent = "NANOBOT_TELEGRAM_TOKEN=$($Config.TelegramToken)"
+if ($Config.DiscordToken) {
+    $envContent = "NANOBOT_DISCORD_TOKEN=$($Config.DiscordToken)"
     Set-Content -Path $gatewayEnvFile -Value $envContent -Encoding UTF8
-    Write-Success "Telegram token stored in $gatewayEnvFile"
+    Write-Success "Discord token stored in $gatewayEnvFile"
 }
 
 # ── nanobot onboard ───────────────────────────────────────────────────────────
@@ -664,10 +664,10 @@ if ($Config.BraveApiKey) {
     Write-Host "  $($Colors.Bold)Web search:$($Colors.Reset) $($Colors.Yellow)disabled$($Colors.Reset)"
 }
 
-if ($Config.TelegramToken) {
-    Write-Host "  $($Colors.Bold)Telegram:$($Colors.Reset)   $($Colors.Green)enabled$($Colors.Reset)"
+if ($Config.DiscordToken) {
+    Write-Host "  $($Colors.Bold)Discord:$($Colors.Reset)    $($Colors.Green)enabled$($Colors.Reset)"
 } else {
-    Write-Host "  $($Colors.Bold)Telegram:$($Colors.Reset)   $($Colors.Yellow)disabled$($Colors.Reset)"
+    Write-Host "  $($Colors.Bold)Discord:$($Colors.Reset)    $($Colors.Yellow)disabled$($Colors.Reset)"
 }
 
 if ($Config.McpWorkspacePath) {
@@ -712,11 +712,11 @@ if (-not $Config.BraveApiKey) {
     Write-Host ""
 }
 
-if (-not $Config.TelegramToken) {
-    Write-Host "$($Colors.Yellow)Tip:$($Colors.Reset) Add Telegram later:"
-    Write-Host "  1. @BotFather for token, @userinfobot for your ID"
-    Write-Host "  2. Edit config → set $($Colors.Cyan)channels.telegram.enabled=true$($Colors.Reset)"
-    Write-Host "  3. Add $($Colors.Cyan)NANOBOT_TELEGRAM_TOKEN=<token>$($Colors.Reset) to $($Colors.Cyan)$gatewayEnvFile$($Colors.Reset)"
+if (-not $Config.DiscordToken) {
+    Write-Host "$($Colors.Yellow)Tip:$($Colors.Reset) Add Discord later:"
+    Write-Host "  1. Create bot at $($Colors.Cyan)discord.com/developers/applications$($Colors.Reset)"
+    Write-Host "  2. Edit config → set $($Colors.Cyan)channels.discord.enabled=true$($Colors.Reset)"
+    Write-Host "  3. Add $($Colors.Cyan)NANOBOT_DISCORD_TOKEN=<token>$($Colors.Reset) to $($Colors.Cyan)$gatewayEnvFile$($Colors.Reset)"
     Write-Host ""
 }
 

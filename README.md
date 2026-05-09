@@ -45,10 +45,10 @@ The `install_nanobot.sh` script automates the complete nanobot stack:
 
 ✅ **Features & Integrations**
 - **Brave Search** — live web search (optional, free tier available)
-- **Telegram** — real-time chat interface (optional)
+- **Discord** — real-time chat interface with your AI agent (default)
 - **MCP Filesystem Server** — scoped file access (optional)
 - **systemd user service** — auto-start on login/reboot with DNS preflight and tighter filesystem scope (optional)
-- **Health check command** — verifies Ollama, GPU offload, gateway status, Telegram token injection, and workspace write access
+- **Health check command** — verifies Ollama, GPU offload, gateway status, Discord token injection, and workspace write access
 
 ---
 
@@ -78,7 +78,7 @@ bash install_nanobot.sh
 The script is **interactive** — you'll be prompted for:
 - **Model selection** (choose from 9 curated models or enter a custom tag)
 - **Brave Search API** (optional; get free key at brave.com/search/api)
-- **Telegram bot** (optional; set up via @BotFather)
+- **Discord bot** (recommended; easy setup at discord.com/developers)
 - **MCP filesystem** (optional; defaults to `~/.nanobot/workspace`)
 - **systemd service** (optional; auto-start on login)
 
@@ -250,14 +250,14 @@ nanobot-health-check
 2. During installation, provide your key when prompted
 3. Or edit `~/.nanobot/config.json` and set `tools.web.search.apiKey`
 
-### Telegram Bot (Chat Interface)
-1. Create a bot via [@BotFather](https://t.me/BotFather) — get the **token**
-2. Get your numeric user ID via [@userinfobot](https://t.me/userinfobot)
+### Discord Bot (Chat Interface) — Recommended
+1. Create a bot at [discord.com/developers/applications](https://discord.com/developers/applications) — copy the **token**
+2. Right-click a Discord channel and **Copy Channel ID**
 3. During installation, provide both when prompted
-4. Or edit config and set `channels.telegram.enabled`
-5. Store the token in `~/.config/nanobot/gateway.env` as `NANOBOT_TELEGRAM_TOKEN=...`
+4. Or see [DISCORD_SETUP.md](DISCORD_SETUP.md) for manual setup
+5. Store the token in `~/.config/nanobot/gateway.env` as `NANOBOT_DISCORD_TOKEN=...`
 
-Your bot will be available immediately for real-time chat.
+Your bot will be available immediately for real-time chat in Discord!
 
 ### MCP Filesystem Server
 Enables nanobot to safely access files within a scoped directory:
