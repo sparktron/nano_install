@@ -69,12 +69,17 @@ install_nodejs() {
 
 prompt_yn() {
     local prompt="$1"
+    local default="${2:-n}"  # n = no by default, y = yes by default
+    local opts="[y/N]"
+    [[ "$default" == "y" ]] && opts="[Y/n]"
+
     while true; do
-        read -rp "$(echo -e "${YELLOW}[?]${NC} ${prompt} [y/n]: ")" yn
+        read -rp "$(echo -e "${YELLOW}[?]${NC} ${prompt} ${opts}: ")" yn
         case "${yn,,}" in
             y|yes) return 0 ;;
             n|no)  return 1 ;;
-            *) warn "Please answer y or n." ;;
+            "") [[ "$default" == "y" ]] && return 0 || return 1 ;;
+            *) warn "Please answer y or n, or press Enter for default." ;;
         esac
     done
 }
@@ -98,15 +103,20 @@ echo ""
 echo -e "${CYAN}Select a model to pull with Ollama:${NC}"
 echo ""
 for i in "${!MODELS[@]}"; do
-    printf "  %2d) %s\n" "$((i+1))" "${MODELS[$i]%%|*}"
+    if (( i == 0 )); then
+        printf "  %2d) %s %s[RECOMMENDED - Fast & Capable]%s\n" "$((i+1))" "${MODELS[$i]%%|*}" "${GREEN}" "${NC}"
+    else
+        printf "  %2d) %s\n" "$((i+1))" "${MODELS[$i]%%|*}"
+    fi
 done
 echo ""
 while true; do
-    read -rp "Enter number [1-${#MODELS[@]}]: " CHOICE
+    read -rp "Enter number [1-${#MODELS[@]}, default: 1]: " CHOICE
+    CHOICE="${CHOICE:-1}"  # Default to 1 if empty
     if [[ "$CHOICE" =~ ^[0-9]+$ ]] && (( CHOICE >= 1 && CHOICE <= ${#MODELS[@]} )); then
         break
     fi
-    warn "Invalid choice."
+    warn "Invalid choice. Enter a number between 1 and ${#MODELS[@]}"
 done
 SELECTED="${MODELS[$((CHOICE-1))]}"
 MODEL_TAG="${SELECTED##*|}"
@@ -120,13 +130,14 @@ success "Model: ${MODEL_TAG}"
 echo ""
 echo -e "${CYAN}Brave Search API${NC} — enables live web search"
 echo -e "  Free tier: 1,000 queries/month — get a key at ${YELLOW}brave.com/search/api${NC}"
+echo -e "  ${YELLOW}[Optional - can add later]${NC}"
 echo ""
-if prompt_yn "Configure Brave Search?"; then
+if prompt_yn "Configure Brave Search now?" "n"; then
     read -rp "  Brave Search API key: " BRAVE_API_KEY
     BRAVE_API_KEY="${BRAVE_API_KEY// /}"
     [[ -n "$BRAVE_API_KEY" ]] && success "Brave key captured" || warn "Blank — web search disabled"
 else
-    warn "Skipped — web search will be unavailable"
+    warn "Skipped — you can add Brave Search later"
 fi
 
 # ── Telegram ──────────────────────────────────────────────────────────────────
@@ -134,8 +145,9 @@ echo ""
 echo -e "${CYAN}Telegram channel${NC} — gives nanobot a real UI"
 echo -e "  1. Create a bot via @BotFather → copy the token"
 echo -e "  2. Get your numeric user ID via @userinfobot"
+echo -e "  ${YELLOW}[Optional - requires Telegram bot setup]${NC}"
 echo ""
-if prompt_yn "Configure Telegram?"; then
+if prompt_yn "Configure Telegram now?" "n"; then
     read -rp "  Bot token: " TELEGRAM_TOKEN
     TELEGRAM_TOKEN="${TELEGRAM_TOKEN// /}"
     read -rp "  Your numeric user ID: " TELEGRAM_USER_ID
@@ -154,16 +166,18 @@ fi
 # ── MCP filesystem server ─────────────────────────────────────────────────────
 echo ""
 echo -e "${CYAN}MCP filesystem server${NC} — scoped file access via Model Context Protocol"
+echo -e "  ${YELLOW}[Recommended for file operations]${NC}"
 echo ""
-if prompt_yn "Configure MCP filesystem server?"; then
-    read -rp "  Path to expose [default: $HOME]: " MCP_WORKSPACE_PATH
-    MCP_WORKSPACE_PATH="${MCP_WORKSPACE_PATH:-$HOME}"
+if prompt_yn "Configure MCP filesystem server?" "y"; then
+    read -rp "  Path to expose [default: $HOME/.nanobot/workspace]: " MCP_WORKSPACE_PATH
+    MCP_WORKSPACE_PATH="${MCP_WORKSPACE_PATH:-$HOME/.nanobot/workspace}"
+    [[ -z "$MCP_WORKSPACE_PATH" ]] && info "Using default: $HOME/.nanobot/workspace"
     MCP_WORKSPACE_PATH="${MCP_WORKSPACE_PATH%/}"
     MCP_WORKSPACE_PATH="${MCP_WORKSPACE_PATH/#\~/$HOME}"
-    if [[ -d "$MCP_WORKSPACE_PATH" ]]; then
+    if mkdir -p "$MCP_WORKSPACE_PATH" && [[ -d "$MCP_WORKSPACE_PATH" ]]; then
         success "MCP path: ${MCP_WORKSPACE_PATH}"
     else
-        warn "Path does not exist — MCP filesystem will not be configured"
+        warn "Path could not be created — MCP filesystem will not be configured"
         MCP_WORKSPACE_PATH=""
     fi
 else
@@ -173,12 +187,13 @@ fi
 # ── systemd service ───────────────────────────────────────────────────────────
 echo ""
 echo -e "${CYAN}systemd user service${NC} — runs nanobot gateway on login / after reboot"
+echo -e "  ${YELLOW}[Recommended for always-on AI agent]${NC}"
 echo ""
-if prompt_yn "Install systemd user service?"; then
+if prompt_yn "Install systemd user service?" "y"; then
     SETUP_SYSTEMD=true
     success "systemd service will be installed"
 else
-    warn "Skipped — start manually with: nanobot gateway"
+    warn "Skipped — you can start manually with: nanobot gateway"
 fi
 
 echo ""
@@ -265,8 +280,8 @@ else
     info "Cloning HKUDS/nanobot..."
     git clone https://github.com/HKUDS/nanobot.git "$NANOBOT_DIR"
 fi
-info "pip install -e ..."
-"$PYTHON" -m pip install -e "$NANOBOT_DIR" --quiet
+info "Installing nanobot package..."
+"$PYTHON" -m pip install --user --upgrade "$NANOBOT_DIR" --quiet
 require_cmd nanobot
 success "nanobot installed"
 
@@ -286,7 +301,7 @@ fi
 if [[ -n "$TELEGRAM_TOKEN" ]]; then
     TELEGRAM_BLOCK="    \"telegram\": {
       \"enabled\": true,
-      \"token\": \"${TELEGRAM_TOKEN}\",
+      \"token\": \"\",
       \"allowFrom\": [\"${TELEGRAM_USER_ID}\"]
     }"
 else
@@ -297,27 +312,34 @@ else
     }"
 fi
 
-# Build Brave block
+# Build web search block
 if [[ -n "$BRAVE_API_KEY" ]]; then
-    BRAVE_INNER="\"apiKey\": \"${BRAVE_API_KEY}\", \"maxResults\": 5"
+    WEB_SEARCH_INNER="\"provider\": \"brave\", \"apiKey\": \"${BRAVE_API_KEY}\", \"maxResults\": 5"
 else
-    BRAVE_INNER="\"apiKey\": \"\", \"maxResults\": 5"
+    WEB_SEARCH_INNER="\"provider\": \"duckduckgo\", \"apiKey\": \"\", \"maxResults\": 5"
 fi
 
 # Build tools block (with or without MCP)
 if [[ -n "$MCP_WORKSPACE_PATH" ]]; then
     TOOLS_BLOCK="  \"tools\": {
-    \"web\": { \"search\": { ${BRAVE_INNER} } },
+    \"web\": { \"enable\": true, \"search\": { ${WEB_SEARCH_INNER} } },
+    \"exec\": { \"enable\": true, \"timeout\": 60, \"pathAppend\": \"\" },
+    \"restrictToWorkspace\": true,
     \"mcpServers\": {
       \"filesystem\": {
         \"command\": \"npx\",
         \"args\": [\"-y\", \"@modelcontextprotocol/server-filesystem\", \"${MCP_WORKSPACE_PATH}\"]
       }
-    }
+    },
+    \"ssrfWhitelist\": []
   }"
 else
     TOOLS_BLOCK="  \"tools\": {
-    \"web\": { \"search\": { ${BRAVE_INNER} } }
+    \"web\": { \"enable\": true, \"search\": { ${WEB_SEARCH_INNER} } },
+    \"exec\": { \"enable\": true, \"timeout\": 60, \"pathAppend\": \"\" },
+    \"restrictToWorkspace\": true,
+    \"mcpServers\": {},
+    \"ssrfWhitelist\": []
   }"
 fi
 
@@ -331,24 +353,344 @@ cat > "$NANOBOT_CONFIG" <<EOF
   },
   "agents": {
     "defaults": {
-      "model": "ollama/${MODEL_TAG}",
+      "model": "${MODEL_TAG}",
+      "provider": "ollama",
       "workspace": "~/.nanobot/workspace",
-      "maxTokens": 8192,
-      "temperature": 0.7,
-      "maxToolIterations": 20
+      "maxTokens": 1024,
+      "contextWindowTokens": 4096,
+      "temperature": 0.2,
+      "maxToolIterations": 20,
+      "memory": {
+        "maxHistoryEntries": 10000,
+        "retrievedHistoryEntries": 6,
+        "retrievedHistoryChars": 3000
+      }
     }
   },
   "channels": {
 ${TELEGRAM_BLOCK}
   },
   "gateway": {
-    "host": "0.0.0.0",
+    "host": "127.0.0.1",
     "port": 18789
   },
 ${TOOLS_BLOCK}
 }
 EOF
 success "Config written to ${NANOBOT_CONFIG}"
+
+# Store Telegram token outside the main config file.
+GATEWAY_ENV_DIR="$HOME/.config/nanobot"
+GATEWAY_ENV_FILE="$GATEWAY_ENV_DIR/gateway.env"
+mkdir -p "$GATEWAY_ENV_DIR"
+if [[ -n "$TELEGRAM_TOKEN" ]]; then
+    cat > "$GATEWAY_ENV_FILE" <<EOF
+NANOBOT_TELEGRAM_TOKEN=${TELEGRAM_TOKEN}
+EOF
+    chmod 600 "$GATEWAY_ENV_FILE"
+    success "Telegram token stored in ${GATEWAY_ENV_FILE}"
+fi
+
+# Create a launcher that injects secrets at runtime and waits for DNS.
+GATEWAY_LAUNCHER="$HOME/.local/bin/nanobot-gateway-launcher"
+mkdir -p "$HOME/.local/bin"
+cat > "$GATEWAY_LAUNCHER" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+BASE_CONFIG="${HOME}/.nanobot/config.json"
+RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/nanobot"
+RUNTIME_CONFIG="${RUNTIME_DIR}/gateway-config.json"
+
+mkdir -p "${RUNTIME_DIR}"
+chmod 700 "${RUNTIME_DIR}"
+
+export BASE_CONFIG
+export RUNTIME_CONFIG
+
+if [[ ! -f "${BASE_CONFIG}" ]]; then
+    echo "Missing nanobot config: ${BASE_CONFIG}" >&2
+    exit 1
+fi
+
+needs_telegram_dns="$(python3.11 - <<'PY'
+import json
+import os
+from pathlib import Path
+
+data = json.loads(Path(os.environ["BASE_CONFIG"]).read_text(encoding="utf-8"))
+telegram = data.get("channels", {}).get("telegram", {})
+enabled = bool(telegram.get("enabled"))
+token = os.environ.get("NANOBOT_TELEGRAM_TOKEN", "").strip()
+print("yes" if enabled and token else "no")
+PY
+)"
+
+if [[ "${needs_telegram_dns}" == "yes" ]]; then
+    for _ in $(seq 1 30); do
+        if getent hosts api.telegram.org >/dev/null 2>&1; then
+            break
+        fi
+        sleep 2
+    done
+    if ! getent hosts api.telegram.org >/dev/null 2>&1; then
+        echo "Timed out waiting for DNS resolution for api.telegram.org" >&2
+        exit 1
+    fi
+fi
+
+python3.11 - <<'PY'
+import json
+import os
+from pathlib import Path
+
+base_path = Path(os.environ["BASE_CONFIG"])
+runtime_path = Path(os.environ["RUNTIME_CONFIG"])
+
+data = json.loads(base_path.read_text(encoding="utf-8"))
+telegram = data.setdefault("channels", {}).setdefault("telegram", {})
+telegram["token"] = os.environ.get("NANOBOT_TELEGRAM_TOKEN", "").strip()
+
+runtime_path.write_text(json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+runtime_path.chmod(0o600)
+PY
+
+exec "${HOME}/.local/bin/nanobot" gateway --config "${RUNTIME_CONFIG}"
+EOF
+chmod 700 "$GATEWAY_LAUNCHER"
+success "Gateway launcher written to ${GATEWAY_LAUNCHER}"
+
+# Create a health check for runtime verification and GPU recovery triage.
+HEALTH_CHECK="$HOME/.local/bin/nanobot-health-check"
+cat > "$HEALTH_CHECK" <<'EOF'
+#!/usr/bin/env bash
+set -euo pipefail
+
+CONFIG_PATH="${NANOBOT_CONFIG:-${HOME}/.nanobot/config.json}"
+WORKSPACE_PATH="${NANOBOT_WORKSPACE:-${HOME}/.nanobot/workspace}"
+OLLAMA_URL="${OLLAMA_URL:-http://127.0.0.1:11434}"
+GATEWAY_ENV_PATH="${NANOBOT_GATEWAY_ENV:-${HOME}/.config/nanobot/gateway.env}"
+RUNTIME_CONFIG_PATH="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/nanobot/gateway-config.json"
+
+status=0
+
+ok()
+{
+    printf '[OK] %s\n' "$*"
+}
+
+warn()
+{
+    printf '[WARN] %s\n' "$*" >&2
+}
+
+fail()
+{
+    printf '[FAIL] %s\n' "$*" >&2
+    status=1
+}
+
+need_command()
+{
+    if ! command -v "$1" >/dev/null 2>&1; then
+        fail "Missing command: $1"
+        return 1
+    fi
+}
+
+need_command curl || true
+need_command python3.11 || true
+need_command systemctl || true
+
+if [[ ! -f "${CONFIG_PATH}" ]]; then
+    fail "Missing nanobot config: ${CONFIG_PATH}"
+    exit "${status}"
+fi
+
+model_tag="$(python3.11 - "${CONFIG_PATH}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+config_path = Path(sys.argv[1])
+data = json.loads(config_path.read_text(encoding="utf-8"))
+print(data.get("agents", {}).get("defaults", {}).get("model", ""))
+PY
+)"
+
+if [[ -z "${model_tag}" ]]; then
+    fail "No agents.defaults.model configured in ${CONFIG_PATH}"
+else
+    ok "Configured model: ${model_tag}"
+fi
+
+if python3.11 -m json.tool "${CONFIG_PATH}" >/dev/null; then
+    ok "Config JSON is valid"
+else
+    fail "Config JSON is invalid: ${CONFIG_PATH}"
+fi
+
+if curl -fsS "${OLLAMA_URL}/api/tags" >/dev/null; then
+    ok "Ollama API reachable at ${OLLAMA_URL}"
+else
+    fail "Ollama API is not reachable at ${OLLAMA_URL}"
+fi
+
+if [[ -n "${model_tag}" ]] && command -v curl >/dev/null 2>&1; then
+    chat_payload="$(python3.11 - "${model_tag}" <<'PY'
+import json
+import sys
+
+print(json.dumps({
+    "model": sys.argv[1],
+    "messages": [{"role": "user", "content": "Reply exactly OK"}],
+    "stream": False,
+    "max_tokens": 8,
+}))
+PY
+)"
+    if curl -fsS "${OLLAMA_URL}/v1/chat/completions" \
+        -H 'Content-Type: application/json' \
+        -d "${chat_payload}" >/dev/null; then
+        ok "Ollama completion request succeeded"
+    else
+        fail "Ollama completion request failed for ${model_tag}"
+    fi
+
+    ps_json="$(curl -fsS "${OLLAMA_URL}/api/ps" 2>/dev/null || true)"
+    if [[ -n "${ps_json}" ]]; then
+        size_vram_bytes="$(python3.11 - "${ps_json}" "${model_tag}" <<'PY'
+import json
+import sys
+
+data = json.loads(sys.argv[1])
+model_tag = sys.argv[2]
+for model in data.get("models", []):
+    if model.get("name") == model_tag or model.get("model") == model_tag:
+        size_vram_bytes = int(model.get("size_vram") or 0)
+        print(size_vram_bytes)
+        raise SystemExit(0)
+print(0)
+PY
+)"
+        if [[ "${size_vram_bytes}" =~ ^[0-9]+$ ]] && (( size_vram_bytes > 0 )); then
+            ok "Ollama model is loaded in VRAM (${size_vram_bytes} bytes)"
+        else
+            fail "Ollama model is not GPU-backed; check /dev/nvidia-uvm and Ollama logs"
+        fi
+    else
+        fail "Could not read Ollama /api/ps"
+    fi
+fi
+
+if [[ -e /dev/nvidia-uvm ]]; then
+    if python3.11 - <<'PY'
+import os
+
+fd = os.open("/dev/nvidia-uvm", os.O_RDWR)
+os.close(fd)
+PY
+    then
+        ok "/dev/nvidia-uvm opens for CUDA compute"
+    else
+        fail "/dev/nvidia-uvm returned an error; reload nvidia_uvm or reboot"
+    fi
+else
+    warn "/dev/nvidia-uvm is absent; this is only acceptable on CPU-only hosts"
+fi
+
+if systemctl --user list-unit-files nanobot-gateway.service >/dev/null 2>&1; then
+    if systemctl --user is-active --quiet nanobot-gateway.service; then
+        ok "nanobot-gateway service is active"
+    else
+        fail "nanobot-gateway service is not active"
+    fi
+else
+    warn "nanobot-gateway service is not installed for this user"
+fi
+
+telegram_enabled="$(python3.11 - "${CONFIG_PATH}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+print("yes" if data.get("channels", {}).get("telegram", {}).get("enabled") else "no")
+PY
+)"
+
+if [[ "${telegram_enabled}" == "yes" ]]; then
+    if [[ -f "${GATEWAY_ENV_PATH}" ]] && python3.11 - "${GATEWAY_ENV_PATH}" <<'PY'
+import sys
+from pathlib import Path
+
+for line in Path(sys.argv[1]).read_text(encoding="utf-8").splitlines():
+    key, separator, value = line.partition("=")
+    if key == "NANOBOT_TELEGRAM_TOKEN" and separator and value.strip():
+        raise SystemExit(0)
+raise SystemExit(1)
+PY
+    then
+        ok "Telegram token is present in gateway env file"
+    else
+        fail "Telegram is enabled, but ${GATEWAY_ENV_PATH} has no NANOBOT_TELEGRAM_TOKEN"
+    fi
+
+    if [[ -f "${RUNTIME_CONFIG_PATH}" ]] && python3.11 - "${RUNTIME_CONFIG_PATH}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+token = data.get("channels", {}).get("telegram", {}).get("token", "")
+raise SystemExit(0 if token else 1)
+PY
+    then
+        ok "Runtime gateway config has Telegram token injected"
+    else
+        warn "Runtime gateway config is missing or has no injected Telegram token"
+    fi
+fi
+
+mkdir -p "${WORKSPACE_PATH}"
+workspace_probe_path="${WORKSPACE_PATH}/.nanobot-health-check.tmp"
+if : > "${workspace_probe_path}" && rm -f "${workspace_probe_path}"; then
+    ok "Workspace is writable: ${WORKSPACE_PATH}"
+else
+    fail "Workspace is not writable: ${WORKSPACE_PATH}"
+fi
+
+mcp_roots="$(python3.11 - "${CONFIG_PATH}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+for server in data.get("tools", {}).get("mcpServers", {}).values():
+    args = server.get("args", [])
+    if server.get("command") == "npx" and args:
+        root = args[-1]
+        if root.startswith("/"):
+            print(root)
+PY
+)"
+
+if [[ -n "${mcp_roots}" ]]; then
+    while IFS= read -r mcp_root_path; do
+        if [[ -d "${mcp_root_path}" ]]; then
+            ok "MCP filesystem root exists: ${mcp_root_path}"
+        else
+            fail "MCP filesystem root does not exist: ${mcp_root_path}"
+        fi
+    done <<< "${mcp_roots}"
+else
+    warn "No MCP filesystem root configured"
+fi
+
+exit "${status}"
+EOF
+chmod 700 "$HEALTH_CHECK"
+success "Health check written to ${HEALTH_CHECK}"
 
 # ── nanobot onboard ───────────────────────────────────────────────────────────
 header "nanobot onboard"
@@ -367,18 +709,23 @@ if [[ "$SETUP_SYSTEMD" == true ]]; then
     cat > "$SERVICE_FILE" <<EOF
 [Unit]
 Description=Nanobot Gateway
-After=network.target
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
-ExecStart=${NANOBOT_BIN} gateway
+ExecStart=${GATEWAY_LAUNCHER}
 Restart=always
 RestartSec=10
 NoNewPrivileges=yes
 ProtectSystem=strict
-ReadWritePaths=${HOME}
+ProtectHome=read-only
+ReadWritePaths=${HOME}/.nanobot
 Environment=HOME=${HOME}
 Environment=PATH=${HOME}/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=NPM_CONFIG_CACHE=${HOME}/.nanobot/npm-cache
+EnvironmentFile=-${GATEWAY_ENV_FILE}
+WorkingDirectory=${HOME}/.nanobot/workspace
 
 [Install]
 WantedBy=default.target
@@ -400,6 +747,7 @@ curl -sf http://localhost:11434/api/tags &>/dev/null \
     || warn "Ollama API not responding — start manually: ollama serve"
 success "nanobot: $(command -v nanobot)"
 success "Node.js: $(node --version)"
+success "Health check: ${HEALTH_CHECK}"
 
 # ══════════════════════════════════════════════════════════════════════════════
 # DONE
@@ -422,6 +770,8 @@ echo -e "${BOLD}Commands:${NC}"
 echo -e "  ${YELLOW}nanobot agent${NC}                           # interactive CLI"
 echo -e "  ${YELLOW}nanobot agent -m \"hello\"${NC}                # one-shot"
 echo -e "  ${YELLOW}nanobot gateway${NC}                         # foreground gateway"
+echo -e "  ${YELLOW}nanobot serve${NC}                           # local OpenAI-compatible API"
+echo -e "  ${YELLOW}nanobot-health-check${NC}                    # verify Ollama, GPU, gateway, and workspace"
 if [[ "$SETUP_SYSTEMD" == true ]]; then
 echo -e "  ${YELLOW}systemctl --user status nanobot-gateway${NC}  # service status"
 echo -e "  ${YELLOW}systemctl --user restart nanobot-gateway${NC} # restart after config edit"
@@ -438,8 +788,9 @@ if [[ -z "$TELEGRAM_TOKEN" ]]; then
     echo -e "${YELLOW}Tip:${NC} Add Telegram later:"
     echo -e "  1. @BotFather for token, @userinfobot for your ID"
     echo -e "  2. Edit config → set ${CYAN}channels.telegram.enabled=true${NC}"
+    echo -e "  3. Add ${CYAN}NANOBOT_TELEGRAM_TOKEN=<token>${NC} to ${CYAN}${GATEWAY_ENV_FILE}${NC}"
     if [[ "$SETUP_SYSTEMD" == true ]]; then
-    echo -e "  3. ${YELLOW}systemctl --user restart nanobot-gateway${NC}"
+    echo -e "  4. ${YELLOW}systemctl --user restart nanobot-gateway${NC}"
     fi
     echo ""
 fi

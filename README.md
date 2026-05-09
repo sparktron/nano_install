@@ -15,6 +15,15 @@ This installer streamlines the entire setup process for you.
 
 ---
 
+## 💻 Platform Support
+
+- **Linux/macOS**: `bash install_nanobot.sh`
+- **Windows 10/11**: See [WINDOWS_SETUP.md](WINDOWS_SETUP.md) — fully automated PowerShell + batch installer with Chocolatey
+
+👉 **Windows users**: [Quick Windows installation guide →](WINDOWS_SETUP.md)
+
+---
+
 ## ✨ What This Installer Does
 
 The `install_nanobot.sh` script automates the complete nanobot stack:
@@ -31,14 +40,15 @@ The `install_nanobot.sh` script automates the complete nanobot stack:
 
 ✅ **nanobot Framework**
 - Clones from HKUDS/nanobot repository
-- Installs Python dependencies
+- Installs the latest local package without leaving the runtime tied to an editable checkout
 - Initializes workspace (AGENT.md, SOUL.md, memory)
 
 ✅ **Features & Integrations**
 - **Brave Search** — live web search (optional, free tier available)
 - **Telegram** — real-time chat interface (optional)
 - **MCP Filesystem Server** — scoped file access (optional)
-- **systemd user service** — auto-start on login/reboot (optional)
+- **systemd user service** — auto-start on login/reboot with DNS preflight and tighter filesystem scope (optional)
+- **Health check command** — verifies Ollama, GPU offload, gateway status, Telegram token injection, and workspace write access
 
 ---
 
@@ -69,7 +79,7 @@ The script is **interactive** — you'll be prompted for:
 - **Model selection** (choose from 9 curated models or enter a custom tag)
 - **Brave Search API** (optional; get free key at brave.com/search/api)
 - **Telegram bot** (optional; set up via @BotFather)
-- **MCP filesystem** (optional; choose a workspace path)
+- **MCP filesystem** (optional; defaults to `~/.nanobot/workspace`)
 - **systemd service** (optional; auto-start on login)
 
 ### 3. Start Using nanobot
@@ -85,9 +95,14 @@ nanobot agent
 nanobot agent -m "What is the weather in San Francisco?"
 ```
 
-**Start the gateway** (runs HTTP + Telegram interface)
+**Start the gateway** (runs the always-on agent loop, Telegram integration, and local health endpoint)
 ```bash
 nanobot gateway
+```
+
+**Start the local OpenAI-compatible API**
+```bash
+nanobot serve
 ```
 
 ---
@@ -120,7 +135,10 @@ After installation, the config file is located at `~/.nanobot/config.json`. You 
 - Enable Telegram later
 - Configure MCP servers
 - Adjust model parameters (temperature, max tokens)
-- Change gateway host/port
+- Change the gateway health endpoint bind (`gateway.host` / `gateway.port`)
+- Change the OpenAI-compatible API bind (`api.host` / `api.port`)
+
+If you enable Telegram, the installer stores the bot token in `~/.config/nanobot/gateway.env` instead of keeping it in the main JSON config.
 
 **Restart the service after config changes:**
 ```bash
@@ -136,9 +154,11 @@ systemctl --user restart nanobot-gateway
 nanobot agent                          # Interactive chat mode
 nanobot agent -m "question here"       # Single message
 nanobot onboard                        # Re-initialize workspace
+nanobot serve                          # OpenAI-compatible local API
+nanobot-health-check                   # Verify runtime health
 ```
 
-### Gateway Mode (HTTP + Telegram)
+### Gateway Mode (Agent Loop + Telegram + Health)
 ```bash
 nanobot gateway                        # Foreground (Ctrl+C to stop)
 ```
@@ -160,6 +180,69 @@ ollama pull <model-tag>                # Pull another model
 
 ---
 
+## Operational Policy
+
+### Health Check First
+
+Run the health check after installs, reboots, driver updates, Ollama updates, or nanobot config changes:
+
+```bash
+nanobot-health-check
+```
+
+It checks:
+- nanobot config JSON validity
+- Ollama API reachability
+- a real completion against the configured model
+- nonzero Ollama `size_vram`, which confirms GPU offload
+- `/dev/nvidia-uvm`, which CUDA compute needs even when `nvidia-smi` works
+- `nanobot-gateway` systemd status
+- Telegram token injection without printing the token
+- workspace writability
+
+### Tool Access
+
+The default config keeps shell execution enabled because it is useful for local automation, but it also sets `tools.restrictToWorkspace=true`. Treat shell access as an operational tool, not a general chat feature.
+
+Recommended defaults:
+- Keep the nanobot workspace at `~/.nanobot/workspace`.
+- Put reusable safe operations in scripts such as `nanobot-health-check` instead of asking the agent to invent shell commands repeatedly.
+- Disable `tools.exec.enable` if you only want chat/search behavior and do not need local shell automation.
+- Keep `tools.ssrfWhitelist` empty unless you have a specific local service that nanobot must call.
+
+### OpenAI-Compatible API
+
+`nanobot serve` is optional. Leave `nanobot-api.service` disabled unless another local application needs the OpenAI-compatible API. If you do enable it, keep `api.host` bound to `127.0.0.1`.
+
+### Ollama Runtime
+
+Keep Ollama overrides minimal unless measurement shows a real bottleneck:
+
+```ini
+Environment="OLLAMA_HOST=127.0.0.1:11434"
+Environment="OLLAMA_NO_CLOUD=1"
+Environment="OLLAMA_KEEP_ALIVE=30m"
+```
+
+Do not force aggressive model scheduling or CUDA library settings by default. First verify that the configured model is GPU-backed with `nanobot-health-check`.
+
+To inspect the live service override:
+
+```bash
+systemctl cat ollama
+```
+
+If a previous troubleshooting session left forced CUDA settings in the override, remove those lines with:
+
+```bash
+sudo systemctl edit ollama
+sudo systemctl daemon-reload
+sudo systemctl restart ollama
+nanobot-health-check
+```
+
+---
+
 ## 🌐 Optional Features
 
 ### Brave Search (Web Access)
@@ -171,13 +254,14 @@ ollama pull <model-tag>                # Pull another model
 1. Create a bot via [@BotFather](https://t.me/BotFather) — get the **token**
 2. Get your numeric user ID via [@userinfobot](https://t.me/userinfobot)
 3. During installation, provide both when prompted
-4. Or edit config and set `channels.telegram.enabled` + credentials
+4. Or edit config and set `channels.telegram.enabled`
+5. Store the token in `~/.config/nanobot/gateway.env` as `NANOBOT_TELEGRAM_TOKEN=...`
 
 Your bot will be available immediately for real-time chat.
 
 ### MCP Filesystem Server
 Enables nanobot to safely access files within a scoped directory:
-1. During installation, specify a workspace path (e.g., `~/projects`)
+1. During installation, accept the default `~/.nanobot/workspace` path or specify a narrow project directory.
 2. nanobot will have read/write access only to that directory
 3. Useful for content generation, analysis, and automation tasks
 
@@ -193,7 +277,7 @@ Check what's currently configured:
 cat ~/.nanobot/config.json | grep -A 10 mcpServers
 ```
 
-If the output is empty or doesn't show `mcpServers`, you'll need to add it.
+If `mcpServers` is `{}`, no MCP filesystem server is configured.
 
 ### 2. Edit the Config File
 Open the config file in your editor:
@@ -219,7 +303,7 @@ Find the `tools` section and add the `mcpServers` block. Here's the structure:
 }
 ```
 
-**Replace `/path/to/workspace`** with the directory you want nanobot to access (e.g., `~/projects`, `~/documents`, or `/home/user/data`).
+**Replace `/path/to/workspace`** with the narrow directory you want nanobot to access. Prefer `~/.nanobot/workspace` or one project directory over your whole home directory.
 
 ### 4. Restart the Service
 If using systemd:
@@ -245,7 +329,7 @@ nanobot agent -m "List the files in my workspace directory"
 
 ### Multiple MCP Servers (Advanced)
 
-You can configure multiple MCP servers for different purposes. For example:
+You can configure multiple MCP servers for different purposes, but keep each one narrow. For example:
 
 ```json
 {
@@ -276,10 +360,18 @@ Each server runs independently with its own scoped directory. nanobot can access
 - **Scope is enforced**: The MCP filesystem server only has access to the specified directory and its subdirectories. It cannot access parent directories or anywhere else on the system.
 - **Read/Write access**: By default, nanobot can both read and write files. If you need read-only access, configure a restricted user or mount with read-only permissions.
 - **Never expose the home directory carelessly**: If nanobot misbehaves or is compromised, limiting its scope to a specific project directory reduces risk.
+- **Use one scope first**: Add more MCP roots only when a specific workflow needs them.
 
 ---
 
 ## 🐛 Troubleshooting
+
+### Run the health check
+```bash
+nanobot-health-check
+```
+
+Start here before changing config. The command verifies the full local path from nanobot config to Ollama GPU-backed inference.
 
 ### "ollama not found" or Ollama API not responding
 ```bash
@@ -292,10 +384,34 @@ ollama serve
 - Large models (7B+) can take 10+ minutes on slower connections
 - Models are cached in `~/.ollama/models` after first pull
 
+### Ollama replies, but `size_vram` is `0`
+`size_vram: 0` means the model is running on CPU. On NVIDIA systems, check CUDA UVM first:
+
+```bash
+python3 - <<'PY'
+import os
+fd = os.open("/dev/nvidia-uvm", os.O_RDWR)
+os.close(fd)
+print("nvidia-uvm OK")
+PY
+```
+
+If that returns `Input/output error`, reload UVM and restart Ollama:
+
+```bash
+sudo systemctl stop ollama
+sudo rmmod nvidia_uvm
+sudo modprobe nvidia_uvm
+sudo systemctl restart ollama
+nanobot-health-check
+```
+
+If `rmmod` fails or UVM still errors, reboot. If it persists after reboot, repair the NVIDIA driver stack before tuning Ollama.
+
 ### "nanobot" command not found
 ```bash
 # Reinstall the Python package
-python3.11 -m pip install -e ~/nanobot --upgrade
+python3.11 -m pip install --user --upgrade ~/nanobot
 ```
 
 ### Telegram not working
@@ -313,6 +429,19 @@ journalctl --user -u nanobot-gateway --no-pager -n 50
 # If issues persist, run nanobot manually
 nanobot gateway  # to test in foreground
 ```
+
+### Optional API service
+If you installed `nanobot-api.service`, keep it disabled unless needed:
+
+```bash
+systemctl --user is-enabled nanobot-api
+systemctl --user is-active nanobot-api
+```
+
+Enable it only for local clients that need `nanobot serve`.
+
+### Performance tuning
+Keep the selected model, `contextWindowTokens: 4096`, and `maxTokens: 1024` as the stable baseline until you have measured latency, VRAM pressure, or response quality problems. GPU offload matters more than small scheduling tweaks.
 
 ---
 
