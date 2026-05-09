@@ -16,11 +16,11 @@ Both the **Linux/macOS** and **Windows** installers now have smart defaults for 
 - **Action**: Press **Enter** or type `n` → skipped, you can add it later
 - **To enable now**: Type `y` and paste your API key
 
-### 💬 Telegram Bot (Chat Interface)
-- **Default**: **Skip** (can add later)
-- **Why**: Requires creating a Telegram bot first
-- **Action**: Press **Enter** or type `n` → skipped, you can configure later
-- **To enable now**: Type `y` and provide your bot token + user ID
+### 💬 Discord Bot (Chat Interface)
+- **Default**: **Yes** (recommended)
+- **Why**: Easy setup via Discord Developer Portal, great for real-time chat
+- **Action**: Press **Enter** or type `y` → enabled by default
+- **To skip**: Type `n` (you can add Discord later)
 
 ### 📁 MCP Filesystem Server
 - **Default**: **Yes** (recommended)
@@ -43,11 +43,11 @@ If you don't know what to do, just **keep pressing Enter**. The defaults are:
 
 1. **Model**: Llama 3.2 3B (RECOMMENDED) ✓
 2. **Brave Search**: Skip for now
-3. **Telegram**: Skip for now
+3. **Discord**: Enable with default settings ✓
 4. **MCP Filesystem**: Enable with default path ✓
 5. **Auto-start**: Enable ✓
 
-This gives you a fully functional AI agent with file access and automatic startup.
+This gives you a fully functional AI agent with Discord chat, file access, and automatic startup.
 
 ---
 
@@ -102,17 +102,17 @@ Path to expose [default: /home/user/.nanobot/workspace]:
 
 ### 💻 Developer / Power User?
 1. Default model (Llama 3.2 3B) or pick a larger model
-2. Enable MCP filesystem (default: yes)
-3. Enable auto-start (default: yes)
-4. Add Brave Search later when you have an API key
-5. Skip Telegram for now
+2. Enable Discord (default: yes)
+3. Enable MCP filesystem (default: yes)
+4. Enable auto-start (default: yes)
+5. Add Brave Search later when you have an API key
 
 ### 🤖 Want Full Features?
 1. Choose model based on your RAM (larger = more capable but slower)
-2. Get Brave Search API key now (brave.com/search/api)
-3. Create Telegram bot now (@BotFather on Telegram)
+2. Create Discord bot now (discord.com/developers/applications)
+3. Enable Discord with your bot token and channel ID
 4. Enable MCP filesystem (default: yes)
-5. Enable auto-start (default: yes)
+5. Get Brave Search API key and add it to config (brave.com/search/api)
 
 ---
 
@@ -126,16 +126,19 @@ notepad %USERPROFILE%\.nanobot\config.json  # Windows
 ```
 Find `tools.web.search.apiKey` and paste your key.
 
-### Add Telegram After Installation
+### Add Discord After Installation
+See [DISCORD_SETUP.md](DISCORD_SETUP.md) for step-by-step instructions:
 ```bash
-# Edit the config file (same as above)
-# Set channels.telegram.enabled = true
-# Set channels.telegram.allowFrom = ["your_user_id"]
+# Edit the config file
+nano ~/.nanobot/config.json  # Linux/macOS
+notepad %USERPROFILE%\.nanobot\config.json  # Windows
+# Set channels.discord.enabled = true
+# Set channels.discord.channelId = "YOUR_CHANNEL_ID"
 
 # Edit the environment file
 nano ~/.config/nanobot/gateway.env  # Linux/macOS
 notepad %APPDATA%\nanobot\gateway.env  # Windows
-# Add: NANOBOT_TELEGRAM_TOKEN=your_bot_token
+# Add: NANOBOT_DISCORD_TOKEN=your_bot_token
 ```
 
 ### Add MCP Filesystem After Installation
@@ -152,10 +155,10 @@ Edit `config.json` and add the MCP server block in the `tools` section.
 | Ollama | ✅ | — | No |
 | Llama 3.2 3B model | ✅ | Different model | No |
 | nanobot package | ✅ | — | No |
+| Discord Bot | ✅ (default) | Skip | Yes |
 | MCP Filesystem | ✅ (default) | Skip | Yes |
 | Auto-start service | ✅ (default) | Skip | Yes |
 | Brave Search | — | ✅ (optional) | **Yes** |
-| Telegram | — | ✅ (optional) | **Yes** |
 
 ---
 
@@ -167,11 +170,17 @@ When asked, type `n` instead of pressing Enter.
 ### "I want a different model"
 Type the model number (2-10) instead of pressing Enter.
 
+### "I want to skip Discord"
+When asked, type `n` instead of pressing Enter.
+
 ### "I want to add Brave Search now"
 When asked, type `y` and paste your API key from brave.com/search/api.
 
 ### "I want to skip MCP filesystem"
 Type `n` instead of pressing Enter when asked.
+
+### "I want to add Discord later"
+See [DISCORD_SETUP.md](DISCORD_SETUP.md) for manual configuration.
 
 ### "I made a mistake, can I change this?"
 Yes! Edit `~/.nanobot/config.json` (or `%USERPROFILE%\.nanobot\config.json` on Windows) and change any settings.
@@ -184,7 +193,7 @@ Yes! Edit `~/.nanobot/config.json` (or `%USERPROFILE%\.nanobot\config.json` on W
 |------|----------|
 | **Configuration** | `~/.nanobot/config.json` |
 | **Workspace** | `~/.nanobot/workspace` |
-| **Telegram token** | `~/.config/nanobot/gateway.env` |
+| **Discord token** | `~/.config/nanobot/gateway.env` |
 | **Ollama models** | `~/.ollama/models` |
 | **Service** | systemd user service (Linux/macOS) or Windows Task Scheduler |
 

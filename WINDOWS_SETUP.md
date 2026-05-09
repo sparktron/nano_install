@@ -46,7 +46,7 @@ The installer will ask you to configure:
 
 - **Model Selection** — choose from 9 curated models or specify a custom one
 - **Brave Search API** (optional) — for live web search capability
-- **Telegram Bot** (optional) — for chat interface
+- **Discord Bot** (default) — for real-time chat interface
 - **MCP Filesystem** (optional) — for scoped file access
 - **Auto-start Task** (optional) — run on login automatically
 
@@ -89,7 +89,7 @@ After installation:
 | **nanobot config** | `%USERPROFILE%\.nanobot\config.json` |
 | **nanobot source** | `%USERPROFILE%\nanobot` |
 | **workspace** | `%USERPROFILE%\.nanobot\workspace` |
-| **Telegram token** | `%APPDATA%\nanobot\gateway.env` |
+| **Discord token** | `%APPDATA%\nanobot\gateway.env` |
 | **Ollama models** | `%USERPROFILE%\.ollama\models` |
 
 (Note: `%USERPROFILE%` is typically `C:\Users\YourUsername`)
@@ -112,7 +112,7 @@ nanobot agent -m "What is the capital of France?"
 ```powershell
 nanobot gateway
 ```
-Runs the agent loop with Telegram integration and health endpoints.
+Runs the agent loop with Discord integration and health endpoints.
 
 ### Local OpenAI-Compatible API
 ```powershell
@@ -166,8 +166,8 @@ You can modify:
 - **Default model** — change `agents.defaults.model`
 - **Temperature** — adjust reasoning creativity (0.0–2.0)
 - **Max tokens** — control response length
+- **Discord** — enable/disable and set token/channel ID
 - **Brave Search API** — add your key later
-- **Telegram** — enable/disable and set token
 - **MCP servers** — add or modify scoped file access
 
 ### Restart nanobot After Config Changes
@@ -189,19 +189,19 @@ Or if running in foreground, press **Ctrl+C** and re-run the command.
 3. Find `tools.web.search.apiKey` and paste your key
 4. Restart nanobot
 
-### Telegram Bot (Chat Interface)
-1. Create a bot via [@BotFather](https://t.me/BotFather) on Telegram — copy the **token**
-2. Get your numeric user ID via [@userinfobot](https://t.me/userinfobot)
+### Discord Bot (Chat Interface)
+1. Create a bot at [discord.com/developers/applications](https://discord.com/developers/applications) — copy the **token**
+2. Right-click your Discord channel and copy the **Channel ID**
 3. Edit `%USERPROFILE%\.nanobot\config.json`:
-   - Set `channels.telegram.enabled` to `true`
-   - Set `channels.telegram.allowFrom` to `["your_user_id"]`
+   - Set `channels.discord.enabled` to `true`
+   - Set `channels.discord.channelId` to `"your_channel_id"`
 4. Edit `%APPDATA%\nanobot\gateway.env` and add/update:
    ```
-   NANOBOT_TELEGRAM_TOKEN=your_bot_token
+   NANOBOT_DISCORD_TOKEN=your_bot_token
    ```
 5. Restart nanobot
 
-Your bot will be available for real-time chat immediately.
+Your bot will be available for real-time chat immediately. See [DISCORD_SETUP.md](DISCORD_SETUP.md) for detailed instructions.
 
 ### MCP Filesystem Server
 If you skipped this during installation, you can add it later:
